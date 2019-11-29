@@ -36,10 +36,13 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
+import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
 import java.util.ArrayList;
@@ -61,6 +64,9 @@ public class MainActivity extends AppCompatActivity {
     TextView searchtag, percentage;
     private int ACTIVITY_CHOOSE_FILE = 12345;
     Socket selectedSocket;
+    ServerSocket scrserverSocket;
+    Socket scrSocket;
+
 
 
     @SuppressLint("ClickableViewAccessibility")
@@ -90,7 +96,11 @@ public class MainActivity extends AppCompatActivity {
         searchtag = (TextView) findViewById(R.id.searchtag);
         percentage = (TextView) findViewById(R.id.percent);
 
-
+        try {
+            scrserverSocket = new ServerSocket(6969);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
         ConstraintSet set = new ConstraintSet();
 
 
@@ -156,6 +166,12 @@ public class MainActivity extends AppCompatActivity {
                                     .setDuration(0)
                                     .start();
                             lottieanimation1.setVisibility(View.VISIBLE);
+                            try{
+                                scrserverSocket.close();
+                                scrSocket.close();
+                            }catch (Exception e){
+////                                e.printStackTrace();
+                            }
                             startSend();
                             searchtag.setVisibility(View.VISIBLE);
                             socketlistview.setVisibility(View.INVISIBLE);
@@ -168,6 +184,12 @@ public class MainActivity extends AppCompatActivity {
                             lottieanimation2.setVisibility(View.INVISIBLE);
                             receivecount = 0;
                             sendcount = 0;
+                            try{
+                                scrserverSocket.close();
+                                scrSocket.close();
+                            }catch (Exception e){
+//                                e.printStackTrace();
+                            }
                             socketlistview.setVisibility(View.INVISIBLE);
                             searchtag.setVisibility(View.INVISIBLE);
                         }
@@ -186,7 +208,6 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
                 Toast.makeText(getApplicationContext(), socketsArrayList.get(position).getIp(), Toast.LENGTH_SHORT).show();
-//                SendTaskListSelectHelper.socket = socketsArrayList.get(position).getSocket();
                 selectedSocket = socketsArrayList.get(position).getSocket();
                 SelectFile("*/*");
             }
@@ -246,7 +267,7 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
             } catch (Exception e) {
-                e.printStackTrace();
+//                e.printStackTrace();
             }
             return null;
         }
@@ -276,7 +297,7 @@ public class MainActivity extends AppCompatActivity {
                 dataOutputStream.flush();
                 dataOutputStream.close();
             } catch (Exception e) {
-                e.printStackTrace();
+//                e.printStackTrace();
             }
 
         }
@@ -290,6 +311,100 @@ public class MainActivity extends AppCompatActivity {
             socketlistview.setVisibility(View.INVISIBLE);
         }
     }
+    public class serverclientreceive extends AsyncTask {
+        ServerSocket serverSocket;
+        Socket socket;
+        serverclientreceive(ServerSocket serverSocket,Socket socket){
+            this.serverSocket = serverSocket;
+            this.socket = socket;
+        }
+        @Override
+        protected Object doInBackground(Object[] objects) {
+            try{
+                try {
+                    serverSocket = new ServerSocket(6969);
+                }catch (Exception e){
+
+                }
+                socket = serverSocket.accept();
+                DataInputStream dataInputStream = new DataInputStream(socket.getInputStream());
+                DataOutputStream dataOutputStream = new DataOutputStream(socket.getOutputStream());
+                while(true){
+                    System.out.println("I am here");
+                    String message = dataInputStream.readUTF();
+                    System.out.println(message);
+                    if(message.equals("Im cco_client & When u are ready")){
+                        dataOutputStream.writeUTF("Send File Name And Size");
+                    }
+                    if(message.contains("FileName")){
+                        String FileName =getFileName(message);
+                        dataOutputStream.writeUTF("Okay, Now you can send me data");
+                        String s = recievedatafromclient(dataInputStream,getFileName(message),Integer.parseInt(getFileSize(message)));
+                        if(s.equals("Done")){
+                            System.out.println("Saved File");
+                        }
+                    }
+
+                }
+            }catch(Exception e){
+                e.printStackTrace();
+            }
+            return null;
+        }
+
+        public String getFileName(String message){
+            String[] arr = message.split(":");
+            return arr[1].trim();
+        }
+        public String getFileSize(String message){
+            String[] arr = message.split(":");
+            return arr[2].trim();
+        }
+
+        public String  recievedatafromclient(DataInputStream dataInputStream, String FileName, int FileSize){
+
+            try {
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        percentage.setVisibility(View.VISIBLE);
+                    }
+                });
+                File file = new File(Environment.getExternalStorageDirectory().getAbsolutePath() + "/FileTransfer/"+FileName);
+                file.createNewFile();
+                FileOutputStream fileOutputStream = new FileOutputStream(file);
+                byte[] bytes = new byte[600*1024];
+                int size=0;
+                int count;
+
+                while ((count = dataInputStream.read(bytes)) > 0) {
+                    fileOutputStream.write(bytes, 0, count);
+                    size = size+count;
+                    final double per = ((double) size/FileSize) *100;
+                    runOnUiThread(new Runnable() {
+                        public void run() {
+                            percentage.setText(String.valueOf((int)per + "%"));
+                            System.out.println(per);
+                        }
+                    });
+                }
+                fileOutputStream.close();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+            return "Done";
+        }
+        @Override
+        protected void onPostExecute(Object o) {
+            percentage.setVisibility(View.INVISIBLE);
+            imageView.animate().y((float) 0.50 * constraintLayout.getMeasuredHeight()).setDuration(1000).start();
+            lottieanimation1.setVisibility(View.INVISIBLE);
+            lottieanimation2.setVisibility(View.INVISIBLE);
+            searchtag.setVisibility(View.INVISIBLE);
+            socketlistview.setVisibility(View.INVISIBLE);
+        }
+    }
+
 
     public void SelectFile(String FileType) {
         Intent chooseFile;
@@ -396,8 +511,9 @@ public class MainActivity extends AppCompatActivity {
         receivecount++;
         if (receivecount == 1) {
             Log.i("Status", "In receive");
+            serverclientreceive scr = new serverclientreceive(scrserverSocket,scrSocket);
+            scr.execute();
         } else {
-
         }
 
     }
